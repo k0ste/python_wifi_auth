@@ -1,0 +1,12 @@
+[Unit]
+Description=Python Wi-Fi auth
+After=ipset.service
+Requires=network.target
+
+[Service]
+Type=forking
+ExecStart=/usr/bin/python_wifi_auth
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
