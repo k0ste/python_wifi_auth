@@ -1,12 +1,13 @@
 # Maintainer: Shalygin Konstantin <k0ste@k0ste.ru>
 # Contributor: Shalygin Konstantin <k0ste@k0ste.ru>
 
-pkgname='python_wifi_auth'
-pkgver='0.1'
+_pkgname='python_wifi_auth'
+pkgname='python-wifi-auth'
+pkgver='0.2'
 pkgrel='1'
 pkgdesc="Server-side solution provide auth wireless clients for LLC \"Otkrytye tekhnologii\""
 arch=('any')
-url="https://github.com/k0ste/${pkgname}"
+url="https://github.com/k0ste/${_pkgname}"
 license=('GPL')
 depends=('python' 'ipset' 'python-pyroute2' 'python-netaddr' 'python-ipsetpy')
 makedepends=('git')
@@ -15,6 +16,6 @@ sha256sums=('SKIP')
 
 package() {
   cd "${srcdir}/${pkgname}"
-  install -Dm755 "${pkgname}.py" "${pkgdir}/usr/bin/${pkgname}"
-  install -Dm644 "data/python-wifi-auth.service" "${pkgdir}/usr/lib/systemd/system/python-wifi-auth.service"
+  install -Dm755 "${_pkgname}.py" "${pkgdir}/usr/bin/${pkgname}"
+  install -Dm644 "data/${pkgname}.service" "${pkgdir}/usr/lib/systemd/system/${pkgname}.service"
 }

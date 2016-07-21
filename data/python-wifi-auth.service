@@ -1,12 +1,11 @@
 [Unit]
-Description=Python Wi-Fi auth
+Description=Python Wi-Fi Auth
 After=ipset.service
 Requires=network.target
 
 [Service]
-Type=forking
-ExecStart=/usr/bin/python_wifi_auth
-Restart=always
+Type=simple
+ExecStart=/usr/bin/python-wifi-auth -i WIFI_SMS -p 4322 -P admin
 
 [Install]
 WantedBy=multi-user.target
