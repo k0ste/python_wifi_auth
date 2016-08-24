@@ -24,6 +24,7 @@ class SmsAuth(object):
         if self.socket_bind != "": self.socket_bind = self.get_iface_ipaddr()
 
         if ipset_state and (self.socket_bind or self.socket_bind == ""): # ipset ok & iface ok, start socket
+            self.iproute = IPRoute()
             self.start_socket()
         else:
             sys.exit(2)
@@ -46,8 +47,7 @@ class SmsAuth(object):
         Get neighbors macaddr via netlink.
         """
         try:
-            iproute = IPRoute()
-            neighbour_mac = iproute.get_neighbours(family=socket.AF_INET, dst=ipaddr)
+            neighbour_mac = self.iproute.get_neighbours(family=socket.AF_INET, dst=ipaddr)
 
             if len(neighbour_mac) != 0:
                 mac = ([mac.get_attr('NDA_LLADDR') for mac in neighbour_mac][0])
@@ -57,16 +57,13 @@ class SmsAuth(object):
                 return False
         except:
             logging.error("Can't get macaddr for ipaddr '{0}'.".format(ipaddr))
-        finally:
-            iproute.close()
 
     def get_iface_ipaddr(self):
         """
         Method return ipaddres for desired interface.
         """
         try:
-            iproute = IPRoute()
-            iface_ipaddr = iproute.get_addr(family=socket.AF_INET, label=self.socket_bind)
+            iface_ipaddr = self.iproute.get_addr(family=socket.AF_INET, label=self.socket_bind)
 
             if len(iface_ipaddr) != 0:
                 ipaddr = ([ipaddr.get_attr('IFA_ADDRESS') for ipaddr in iface_ipaddr][0])
@@ -76,8 +73,6 @@ class SmsAuth(object):
                 return False
         except:
             logging.error("Can't get any ipaddr on interface '{0}'.".format(self.socket_bind))
-        finally:
-            iproute.close()
 
     def start_socket(self):
         """
@@ -104,6 +99,7 @@ class SmsAuth(object):
                     conn.close()
         finally:
             logging.info("Close socket.")
+            self.iproute.close()
             sock.close()
 
     def send_answer(self, conn, addr, data="Data is not defined."):
@@ -127,10 +123,10 @@ class SmsAuth(object):
             else:
                 data += element
 
-        if not data:
+        if data:
+            self.parse_data(conn, addr, data) # some data, parse this
+        else:
             return
-
-        self.parse_data(conn, addr, data) # some data, parse this
 
     def parse_data(self, conn, addr, data):
         """
@@ -183,18 +179,21 @@ class SmsAuth(object):
         Method return neighbors macaddr if this REACHABLE in ARP cache.
         """
         logging.info("Client '{0}', GET, with ipaddr '{1}'.".format(addr[0], data_ip))
-        check_ip = self.validate_ipaddr(data_ip)
 
-        if check_ip:
+        try:
+            check_ip = self.validate_ipaddr(data_ip)
 
-            get_mac = self.get_ne_mac(data_ip)
-            if get_mac:
-                self.send_answer(conn, addr, get_mac)
+            if check_ip:
+                get_mac = self.get_ne_mac(data_ip)
+
+                if get_mac:
+                    self.send_answer(conn, addr, get_mac)
+                else:
+                    self.send_answer(conn, addr, data="Error: macaddr for ipaddr not found.")
             else:
-                self.send_answer(conn, addr, data="Error: macaddr for ipaddr not found.")
-
-        else:
-            self.send_answer(conn, addr, data="Error: ipaddr is not valid.")
+                self.send_answer(conn, addr, data="Error: ipaddr is not valid.")
+        except:
+            logging.error("Failed to work with GET method for client '{0}'.".format(addr[0]))
 
     def worker_add(self, conn, addr, data_mac, data_ip):
         """
@@ -204,38 +203,39 @@ class SmsAuth(object):
         """
         logging.info("Client '{0}', ADD, with ipaddr '{1}' and macaddr '{2}'.".format(addr[0], data_ip, data_mac))
 
-        check_ip = self.validate_ipaddr(data_ip)
-        check_mac = self.validate_macaddr(data_mac)
+        try:
+            check_ip = self.validate_ipaddr(data_ip)
+            check_mac = self.validate_macaddr(data_mac)
 
-        if check_ip and check_mac: #  when ipaddr and macaddr valid - make entry for ipset
-            entry = data_ip + ',' + data_mac
-            check_entry = self.check_ipset_entry(data_ip)
+            if check_ip and check_mac: #  when ipaddr and macaddr valid - make entry for ipset
+                entry = data_ip + ',' + data_mac
+                check_entry = self.check_ipset_entry(data_ip)
 
-            if check_entry:
-                delete = self.del_ipset_entry(data_ip)
-                add = self.add_ipset_entry(entry)
+                if check_entry:
+                    delete = self.del_ipset_entry(data_ip)
+                    add = self.add_ipset_entry(entry)
 
-                if delete and add: self.send_answer(conn, addr, entry)
+                    if delete and add: self.send_answer(conn, addr, entry)
+                else:
+                    self.add_ipset_entry(entry)
+                    self.send_answer(conn, addr, entry)
             else:
-                self.add_ipset_entry(entry)
-                self.send_answer(conn, addr, entry)
-        else:
-            self.send_answer(conn, addr, data="Error: ipaddr or macaddr not valid.")
+                self.send_answer(conn, addr, data="Error: ipaddr or macaddr not valid.")
+        except:
+            logging.error("Failed to work with ADD method for client '{0}'.".format(addr[0]))
 
     def get_ne_mac(self, ipaddr):
         """
         Get neighbors macaddr via netlink.
         """
-        iproute = IPRoute()
         try:
-            neighbour_mac = iproute.get_neighbours(family=socket.AF_INET, dst=ipaddr)
+            neighbour_mac = self.iproute.get_neighbours(family=socket.AF_INET, dst=ipaddr)
 
             if len(neighbour_mac) != 0:
                 mac = ([mac.get_attr('NDA_LLADDR') for mac in neighbour_mac][0])
                 return mac
             else: return
 
-            iproute.close()
         except:
             logging.error("Can't get macaddr for ipaddr '{0}'.".format(ipaddr))
 
@@ -310,7 +310,7 @@ class SmsAuth(object):
             return
 
     def __init__(self):
-        parser = OptionParser(usage="%prog -i ipset_name -b eth0 -p 4233 -P password", version="%prog 0.3")
+        parser = OptionParser(usage="%prog -i ipset_name -b eth0 -p 4233 -P password", version="%prog 0.4")
         parser.add_option("-b", "--bind", type="string", dest="socket_bind", default="", help="Bind interface [default: all ipv4]")
         parser.add_option("-p", "--port", type="int", dest="socket_port", default="4233", help="Bind to port [default: %default]")
         parser.add_option("-m", "--max-connections", type="int", dest="socket_max_connections", default="10", help="Max connections to socket [default: %default]")
